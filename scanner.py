@@ -5,8 +5,8 @@ import time
 from bleak import BleakScanner
 
 TARGET_NAME = "CMF by Nothing Phone 1" 
-REQUIRED_TIME = 10   # Seconds (Keep short for demo)
-MIN_SIGNAL = -90     # Signal strength cutoff
+REQUIRED_TIME = 10
+MIN_SIGNAL = -90
 
 def setup_database():
     conn = sqlite3.connect('class_data.db')
@@ -22,7 +22,7 @@ def setup_database():
 def save_attendance(name):
     conn = sqlite3.connect('class_data.db')
     c = conn.cursor()
-    
+
     c.execute("SELECT * FROM attendance WHERE name=?", (name,))
     if c.fetchone():
         print(f"   [DB] {name} is already marked.")
@@ -31,51 +31,43 @@ def save_attendance(name):
         c.execute("INSERT INTO attendance (name, time_in, status) VALUES (?, ?, ?)",
                   (name, now, "PRESENT"))
         conn.commit()
-        print(f"\n🎉 [SUCCESS] Saved {name} to Database at {now}!\n")
+        print(f"\n [SUCCESS] Saved {name} to Database at {now}!\n")
     conn.close()
 
 async def main():
     setup_database()
     timers = {}
-    print(f"--- ATTENDANCE SYSTEM ACTIVE ---")
     print(f"Scanning for Name: '{TARGET_NAME}'")
-    print(f"Note: MAC Address may change (Privacy Mode), but we track by Name.")
-    print(f"Press Ctrl+C to stop.\n")
 
     while True:
         devices_dict = await BleakScanner.discover(return_adv=True, timeout=2.0)
-        
         present_now = []
-        
         for address, (device, adv_data) in devices_dict.items():
-            
             d_name = device.name or ""
             l_name = adv_data.local_name or ""
-            
             if TARGET_NAME in d_name or TARGET_NAME in l_name:
-                
+
                 if adv_data.rssi > MIN_SIGNAL:
                     present_now.append(TARGET_NAME)
-                    
                     print(f" >> Found '{TARGET_NAME}' at {address} (RSSI: {adv_data.rssi})")
 
         now = time.time()
-        
+
         for student in present_now:
             if student not in timers:
                 timers[student] = now
-                print(f"   [TIMER START] Counting for {student}...")
+                print(f"timer: ")
             else:
                 duration = int(now - timers[student])
-                print(f"   [TRACKING] {student} present for {duration}s / {REQUIRED_TIME}s")
-                
+                print(f"{student} present for {duration}s / {REQUIRED_TIME}s")
+
                 if duration >= REQUIRED_TIME:
                     save_attendance(student)
                     timers.pop(student) 
 
         for student in list(timers.keys()):
             if student not in present_now:
-                print(f"   [LOST] {student} signal lost. Timer reset.")
+                print(f"{student} signal lost. Timer reset.")
                 del timers[student]
 
         await asyncio.sleep(0.5)
