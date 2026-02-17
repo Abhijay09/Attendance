@@ -4,12 +4,10 @@ import datetime
 import time
 from bleak import BleakScanner
 
-# --- CONFIGURATION ---
-TARGET_ADDRESS = "6F:6D:E5:C9:71:25"  # <--- PASTE YOUR ADDRESS HERE
+TARGET_NAME = "CMF by Nothing Phone 1" 
 REQUIRED_TIME = 10   # Seconds (Keep short for demo)
 MIN_SIGNAL = -90     # Signal strength cutoff
 
-# --- DATABASE SETUP ---
 def setup_database():
     conn = sqlite3.connect('class_data.db')
     c = conn.cursor()
@@ -25,7 +23,6 @@ def save_attendance(name):
     conn = sqlite3.connect('class_data.db')
     c = conn.cursor()
     
-    # Check if already present
     c.execute("SELECT * FROM attendance WHERE name=?", (name,))
     if c.fetchone():
         print(f"   [DB] {name} is already marked.")
@@ -37,50 +34,48 @@ def save_attendance(name):
         print(f"\n🎉 [SUCCESS] Saved {name} to Database at {now}!\n")
     conn.close()
 
-# --- MAIN LOOP ---
 async def main():
     setup_database()
     timers = {}
-    
     print(f"--- ATTENDANCE SYSTEM ACTIVE ---")
-    print(f"Targeting Address: {TARGET_ADDRESS}")
+    print(f"Scanning for Name: '{TARGET_NAME}'")
+    print(f"Note: MAC Address may change (Privacy Mode), but we track by Name.")
     print(f"Press Ctrl+C to stop.\n")
 
     while True:
-        # Scan using the method that fixes your 'rssi' error
         devices_dict = await BleakScanner.discover(return_adv=True, timeout=2.0)
         
         present_now = []
         
-        # Check if our target is in the results
-        if TARGET_ADDRESS in devices_dict:
-            device, adv_data = devices_dict[TARGET_ADDRESS]
+        for address, (device, adv_data) in devices_dict.items():
             
-            if adv_data.rssi > MIN_SIGNAL:
-                # We found the phone!
-                student_name = "STUDENT_ONE" # Hardcoded name for the prototype
-                present_now.append(student_name)
-                print(f" >> Signal detected! RSSI: {adv_data.rssi} dBm")
+            d_name = device.name or ""
+            l_name = adv_data.local_name or ""
+            
+            if TARGET_NAME in d_name or TARGET_NAME in l_name:
+                
+                if adv_data.rssi > MIN_SIGNAL:
+                    present_now.append(TARGET_NAME)
+                    
+                    print(f" >> Found '{TARGET_NAME}' at {address} (RSSI: {adv_data.rssi})")
 
-        # Timer Logic
         now = time.time()
         
         for student in present_now:
             if student not in timers:
                 timers[student] = now
-                print(f"   [TIMER START] Counting...")
+                print(f"   [TIMER START] Counting for {student}...")
             else:
                 duration = int(now - timers[student])
-                print(f"   [TRACKING] {duration}s / {REQUIRED_TIME}s")
+                print(f"   [TRACKING] {student} present for {duration}s / {REQUIRED_TIME}s")
                 
                 if duration >= REQUIRED_TIME:
                     save_attendance(student)
                     timers.pop(student) 
 
-        # Reset if signal lost
         for student in list(timers.keys()):
             if student not in present_now:
-                print(f"   [LOST] Signal lost. Timer reset.")
+                print(f"   [LOST] {student} signal lost. Timer reset.")
                 del timers[student]
 
         await asyncio.sleep(0.5)
